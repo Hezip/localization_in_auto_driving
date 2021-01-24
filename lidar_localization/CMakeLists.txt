@@ -18,6 +18,8 @@ find_package(catkin REQUIRED COMPONENTS
   std_srvs
 )
 
+find_package(yaml-cpp REQUIRED)
+
 add_service_files(
    FILES
    saveMap.srv
@@ -32,7 +34,6 @@ generate_messages(
 set(ALL_TARGET_LIBRARIES "")
 
 include(cmake/glog.cmake)
-include(cmake/YAML.cmake)
 include(cmake/PCL.cmake)
 include(cmake/eigen.cmake)
 include(cmake/geographic.cmake)
@@ -49,28 +50,28 @@ list(REMOVE_ITEM ALL_SRCS ${NODE_SRCS})
 list(REMOVE_ITEM ALL_SRCS ${THIRD_PARTY_SRCS})
 
 add_executable(test_frame_node src/apps/test_frame_node.cpp ${ALL_SRCS})
-target_link_libraries(test_frame_node ${catkin_LIBRARIES} ${ALL_TARGET_LIBRARIES})
+target_link_libraries(test_frame_node ${catkin_LIBRARIES} ${ALL_TARGET_LIBRARIES} yaml-cpp)
 
 add_executable(data_pretreat_node src/apps/data_pretreat_node.cpp ${ALL_SRCS})
 add_dependencies(data_pretreat_node ${catkin_EXPORTED_TARGETS})
-target_link_libraries(data_pretreat_node ${catkin_LIBRARIES} ${ALL_TARGET_LIBRARIES})
+target_link_libraries(data_pretreat_node ${catkin_LIBRARIES} ${ALL_TARGET_LIBRARIES} yaml-cpp)
 
 add_executable(front_end_node src/apps/front_end_node.cpp ${ALL_SRCS})
 add_dependencies(front_end_node ${catkin_EXPORTED_TARGETS})
-target_link_libraries(front_end_node ${catkin_LIBRARIES} ${ALL_TARGET_LIBRARIES})
+target_link_libraries(front_end_node ${catkin_LIBRARIES} ${ALL_TARGET_LIBRARIES} yaml-cpp)
 
 add_executable(back_end_node src/apps/back_end_node.cpp ${ALL_SRCS})
 add_dependencies(back_end_node ${catkin_EXPORTED_TARGETS} optimizeMap_gencpp)
-target_link_libraries(back_end_node ${catkin_LIBRARIES} ${ALL_TARGET_LIBRARIES})
+target_link_libraries(back_end_node ${catkin_LIBRARIES} ${ALL_TARGET_LIBRARIES} yaml-cpp)
 
 add_executable(loop_closing_node src/apps/loop_closing_node.cpp ${ALL_SRCS})
 add_dependencies(loop_closing_node ${catkin_EXPORTED_TARGETS})
-target_link_libraries(loop_closing_node ${catkin_LIBRARIES} ${ALL_TARGET_LIBRARIES})
+target_link_libraries(loop_closing_node ${catkin_LIBRARIES} ${ALL_TARGET_LIBRARIES} yaml-cpp)
 
 add_executable(viewer_node src/apps/viewer_node.cpp ${ALL_SRCS})
 add_dependencies(viewer_node ${catkin_EXPORTED_TARGETS} saveMap_gencpp)
-target_link_libraries(viewer_node ${catkin_LIBRARIES} ${ALL_TARGET_LIBRARIES})
+target_link_libraries(viewer_node ${catkin_LIBRARIES} ${ALL_TARGET_LIBRARIES} yaml-cpp)
 
 add_executable(matching_node src/apps/matching_node.cpp ${ALL_SRCS})
 add_dependencies(matching_node ${catkin_EXPORTED_TARGETS})
-target_link_libraries(matching_node ${catkin_LIBRARIES} ${ALL_TARGET_LIBRARIES})
+target_link_libraries(matching_node ${catkin_LIBRARIES} ${ALL_TARGET_LIBRARIES} yaml-cpp)
