@@ -1,5 +1,5 @@
 <launch>
-    <param name="cloud_topic" type="string" value="/lidar_pretreat_points" />
+    <param name="cloud_topic" type="string" value="/synced_cloud" />
     <param name="odom_topic" type="string" value="/aft_mapped_to_init" />
     
     <include file="$(find livox_mapping)/launch/mapping_mid.launch"/>

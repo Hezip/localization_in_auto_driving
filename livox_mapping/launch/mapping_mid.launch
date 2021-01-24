@@ -3,7 +3,7 @@
   <arg name="rviz" default="false" />
 
   <node pkg="livox_mapping" type="loam_scanRegistration" name="scanRegistration" output="screen">
-  <remap from="/livox/lidar" to="/lidar_pretreat_points" />
+  <remap from="/livox/lidar" to="/synced_cloud" />
   </node>
 
   <node pkg="livox_mapping" type="loam_laserMapping" name="laserMapping" output="screen">
