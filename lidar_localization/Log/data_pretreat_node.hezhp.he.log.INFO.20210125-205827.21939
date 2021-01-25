@@ -1,0 +1,4 @@
+Log file created at: 2021/01/25 20:58:27
+Running on machine: hezhp
+Log line format: [IWEF]yyyymmdd hh:mm:ss.uuuuuu threadid file:line] msg
+W20210125 20:58:27.464584 21939 gnss_data.cpp:30] GeoConverter has not set origin position
