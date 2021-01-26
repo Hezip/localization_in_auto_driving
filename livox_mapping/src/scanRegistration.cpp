@@ -55,7 +55,7 @@ int scanID;
 
 int CloudFeatureFlag[32000];
 
-tf::TransformListener* listener_;
+tf::TransformListener *listener_;
 
 ros::Publisher pubLaserCloud;
 ros::Publisher pubCornerPointsSharp;
@@ -65,6 +65,9 @@ std::vector<sensor_msgs::PointCloud2ConstPtr> msg_window;
 cv::Mat matA1(3, 3, CV_32F, cv::Scalar::all(0));
 cv::Mat matD1(1, 3, CV_32F, cv::Scalar::all(0));
 cv::Mat matV1(3, 3, CV_32F, cv::Scalar::all(0));
+
+std::deque<nav_msgs::Odometry> transform_buff_;
+std::deque<sensor_msgs::PointCloud2> cloud_buff_;
 
 bool plane_judge(const std::vector<PointType> &point_list, const int plane_threshold) {
   int num = point_list.size();
@@ -122,59 +125,29 @@ bool plane_judge(const std::vector<PointType> &point_list, const int plane_thres
     return false;
   }
 }
-void laserCloudHandler_temp(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) //for hkmars data
-{
 
-  pcl::PointCloud<PointType>::Ptr laserCloudIn(new pcl::PointCloud<PointType>());
-
-  if (msg_window.size() < 2) {
-    msg_window.push_back(laserCloudMsg);
-  } else {
-    msg_window.erase(msg_window.begin());
-    msg_window.push_back(laserCloudMsg);
-  }
-
-  for (int i = 0; i < msg_window.size(); i++) {
-    pcl::PointCloud<PointType> temp;
-    pcl::fromROSMsg(*msg_window[i], temp);
-    *laserCloudIn += temp;
-  }
-  sensor_msgs::PointCloud2 laserCloudOutMsg;
-  pcl::toROSMsg(*laserCloudIn, laserCloudOutMsg);
-  laserCloudOutMsg.header.stamp = laserCloudMsg->header.stamp;
-  laserCloudOutMsg.header.frame_id = "/livox";
-  pubLaserCloud_temp.publish(laserCloudOutMsg);
-
-}
-
-bool TransformToMatrix(const tf::StampedTransform& transform, Eigen::Matrix4f& transform_matrix) {
-  Eigen::Translation3f tl_btol(transform.getOrigin().getX(), transform.getOrigin().getY(), transform.getOrigin().getZ());
-
-  double roll, pitch, yaw;
-  tf::Matrix3x3(transform.getRotation()).getEulerYPR(yaw, pitch, roll);
-  Eigen::AngleAxisf rot_x_btol(roll, Eigen::Vector3f::UnitX());
-  Eigen::AngleAxisf rot_y_btol(pitch, Eigen::Vector3f::UnitY());
-  Eigen::AngleAxisf rot_z_btol(yaw, Eigen::Vector3f::UnitZ());
-
-  // 此矩阵为 child_frame_id 到 base_frame_id 的转换矩阵
-  transform_matrix = (tl_btol * rot_z_btol * rot_y_btol * rot_x_btol).matrix();
-
-  return true;
+void JointHandler(const nav_msgs::OdometryConstPtr &jointMatrix) {
+  transform_buff_.push_back(*jointMatrix);
 }
 
 void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
+  cloud_buff_.push_back(*laserCloudMsg);
+}
+
+void Process(const nav_msgs::Odometry &transform, const sensor_msgs::PointCloud2 &laserCloudMsg) {
 
   Eigen::Matrix4f transform_matrix = Eigen::Matrix4f::Identity();
-  try {
-    tf::StampedTransform transform;
-    listener_->lookupTransform("/base_link", "/livox_frame", ros::Time(0), transform);
-    TransformToMatrix(transform, transform_matrix);
-  } catch (tf::TransformException &ex) {
-    ROS_ERROR("can not read tf");
-  }
+  Eigen::Quaternionf qua(transform.pose.pose.orientation.w,
+                         transform.pose.pose.orientation.x,
+                         transform.pose.pose.orientation.y,
+                         transform.pose.pose.orientation.z);
+
+  Eigen::Vector3f pos(transform.pose.pose.position.x, transform.pose.pose.position.y, transform.pose.pose.position.z);
+  transform_matrix.block<3,3>(0,0) = qua.toRotationMatrix();
+  transform_matrix.block<3,1>(0,3) = pos;
 
   pcl::PointCloud<PointType> laserCloudIn;
-  pcl::fromROSMsg(*laserCloudMsg, laserCloudIn);
+  pcl::fromROSMsg(laserCloudMsg, laserCloudIn);
 
   int cloudSize = laserCloudIn.points.size();
 
@@ -528,24 +501,36 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg) {
   sensor_msgs::PointCloud2 laserCloudOutMsg;
   pcl::transformPointCloud(*laserCloud, *laserCloud, transform_matrix);
   pcl::toROSMsg(*laserCloud, laserCloudOutMsg);
-  laserCloudOutMsg.header.stamp = laserCloudMsg->header.stamp;
-  laserCloudOutMsg.header.frame_id = "/livox";
+  laserCloudOutMsg.header.stamp = laserCloudMsg.header.stamp;
+  laserCloudOutMsg.header.frame_id = "/base_link";
   pubLaserCloud.publish(laserCloudOutMsg);
 
   sensor_msgs::PointCloud2 cornerPointsSharpMsg;
   pcl::transformPointCloud(cornerPointsSharp, cornerPointsSharp, transform_matrix);
   pcl::toROSMsg(cornerPointsSharp, cornerPointsSharpMsg);
-  cornerPointsSharpMsg.header.stamp = laserCloudMsg->header.stamp;
-  cornerPointsSharpMsg.header.frame_id = "/livox";
+  cornerPointsSharpMsg.header.stamp = laserCloudMsg.header.stamp;
+  cornerPointsSharpMsg.header.frame_id = "/base_link";
   pubCornerPointsSharp.publish(cornerPointsSharpMsg);
 
   sensor_msgs::PointCloud2 surfPointsFlat2;
   pcl::transformPointCloud(surfPointsFlat, surfPointsFlat, transform_matrix);
   pcl::toROSMsg(surfPointsFlat, surfPointsFlat2);
-  surfPointsFlat2.header.stamp = laserCloudMsg->header.stamp;
-  surfPointsFlat2.header.frame_id = "/livox";
+  surfPointsFlat2.header.stamp = laserCloudMsg.header.stamp;
+  surfPointsFlat2.header.frame_id = "/base_link";
   pubSurfPointsFlat.publish(surfPointsFlat2);
 
+}
+
+void Run() {
+  while (!transform_buff_.empty() && !cloud_buff_.empty()) {
+    nav_msgs::Odometry current_transform = transform_buff_.front();
+    sensor_msgs::PointCloud2 current_cloud = cloud_buff_.front();
+
+    transform_buff_.pop_front();
+    cloud_buff_.pop_front();
+
+    Process(current_transform, current_cloud);
+  }
 }
 
 int main(int argc, char **argv) {
@@ -561,6 +546,9 @@ int main(int argc, char **argv) {
   ros::Subscriber subLaserCloud = nh.subscribe<sensor_msgs::PointCloud2>
       ("/livox/lidar", 100, laserCloudHandler);
 
+  ros::Subscriber subJointMatrix = nh.subscribe<nav_msgs::Odometry>
+      ("/synced_joint", 100, JointHandler);
+
 //  ros::Subscriber subJointMatrix = nh.subscribe<nav_msgs::Odometry>
 //      ("/synced_joint", 100, laserCloudHandler);
 
@@ -573,7 +561,14 @@ int main(int argc, char **argv) {
   pubSurfPointsFlat = nh.advertise<sensor_msgs::PointCloud2>
       ("/laser_cloud_flat", 20);
 
-  ros::spin();
+  ros::Rate rate(100);
+  while (ros::ok()) {
+    ros::spinOnce();
+
+    Run();
+
+    rate.sleep();
+  }
 
   return 0;
 }

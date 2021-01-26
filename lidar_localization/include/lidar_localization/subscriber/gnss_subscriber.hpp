@@ -11,6 +11,7 @@
 #include <thread>
 
 #include <ros/ros.h>
+#include "lidar_localization/RTKData.h"
 #include "sensor_msgs/NavSatFix.h"
 
 #include "lidar_localization/sensor_data/gnss_data.hpp"
@@ -23,7 +24,7 @@ class GNSSSubscriber {
     void ParseData(std::deque<GNSSData>& deque_gnss_data);
 
   private:
-    void msg_callback(const sensor_msgs::NavSatFixConstPtr& nav_sat_fix_ptr);
+    void msg_callback(const lidar_localization::RTKData::ConstPtr& rtk_ptr);
 
   private:
     ros::NodeHandle nh_;

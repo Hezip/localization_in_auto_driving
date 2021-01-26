@@ -26,6 +26,10 @@ add_service_files(
    optimizeMap.srv
 )
 
+add_message_files(FILES
+        RTKData.msg
+        )
+
 generate_messages(
    DEPENDENCIES
    std_msgs

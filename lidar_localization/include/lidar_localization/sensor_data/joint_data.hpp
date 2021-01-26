@@ -7,6 +7,7 @@
 #define LIDAR_LOCALIZATION_SENSOR_DATA_JOINT_DATA_HPP_
 
 #include <Eigen/Dense>
+#include <deque>
 
 namespace lidar_localization {
 class JointData {
@@ -18,6 +19,7 @@ class JointData {
  public:
   Eigen::Matrix3f GetRotationMatrix();
   Eigen::Matrix4f GetTranslationMatrix();
+  static bool SyncData(std::deque<JointData>& UnsyncedData, std::deque<JointData>& SyncedData, double sync_time);
 };
 }
 

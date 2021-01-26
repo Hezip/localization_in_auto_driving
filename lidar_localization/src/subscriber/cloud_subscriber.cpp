@@ -17,7 +17,8 @@ CloudSubscriber::CloudSubscriber(ros::NodeHandle& nh, std::string topic_name, si
 void CloudSubscriber::msg_callback(const sensor_msgs::PointCloud2::ConstPtr& cloud_msg_ptr) {
     buff_mutex_.lock();
     CloudData cloud_data;
-    cloud_data.time = cloud_msg_ptr->header.stamp.toSec();
+    //取点云中间时刻作为点云时间
+    cloud_data.time = cloud_msg_ptr->header.stamp.toSec() - 0.05;
     pcl::fromROSMsg(*cloud_msg_ptr, *(cloud_data.cloud_ptr));
 
     new_cloud_data_.push_back(cloud_data);

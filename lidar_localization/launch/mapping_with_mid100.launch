@@ -1,6 +1,7 @@
 <launch>
     <param name="cloud_topic" type="string" value="/synced_cloud" />
     <param name="odom_topic" type="string" value="/aft_mapped_to_init" />
+<!--    <param name="use_sim_time" value="true" />-->
     
     <include file="$(find livox_mapping)/launch/mapping_mid.launch"/>
 

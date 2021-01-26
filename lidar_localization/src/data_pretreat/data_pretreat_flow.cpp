@@ -12,17 +12,18 @@ namespace lidar_localization {
 DataPretreatFlow::DataPretreatFlow(ros::NodeHandle &nh, std::string cloud_topic) {
   // subscriber
   cloud_sub_ptr_ = std::make_shared<CloudSubscriber>(nh, "/livox/lidar_all", 100000);
+  joint_sub_ptr_ = std::make_shared<JointSubscriber>(nh, "/joint_states", 100000);
 //    imu_sub_ptr_ = std::make_shared<IMUSubscriber>(nh, "/kitti/oxts/imu", 1000000);
 //    velocity_sub_ptr_ = std::make_shared<VelocitySubscriber>(nh, "/kitti/oxts/gps/vel", 1000000);
-//    gnss_sub_ptr_ = std::make_shared<GNSSSubscriber>(nh, "/kitti/oxts/gps/fix", 1000000);
+  gnss_sub_ptr_ = std::make_shared<GNSSSubscriber>(nh, "/rtk_data", 1000000);
 //    joint_sub_ptr_ = std::make_shared<>();
-//    lidar_to_imu_ptr_ = std::make_shared<TFListener>(nh, "/imu_link", "/velo_link");
+  init_to_map_ptr_ = std::make_shared<TFListener>(nh, "/map", "/base_link");
   lidar_to_cabin_ptr_ = std::make_shared<TFListener>(nh, "/cabin_link", "/livox_frame");
   lidar_to_base_ptr_ = std::make_shared<TFListener>(nh, "/base_link", "/livox_frame");
   // publisher
-  cloud_pub_ptr_ = std::make_shared<CloudPublisher>(nh, cloud_topic, "/camera_init", 100);
+  cloud_pub_ptr_ = std::make_shared<CloudPublisher>(nh, cloud_topic, "/livox_frame", 100);
   joint_pub_ptr_ = std::make_shared<OdometryPublisher>(nh, "/synced_joint", "/base_link", "/livox_frame", 100);
-//    gnss_pub_ptr_ = std::make_shared<OdometryPublisher>(nh, "/synced_gnss", "/map", "/velo_link", 100);
+  gnss_pub_ptr_ = std::make_shared<OdometryPublisher>(nh, "/synced_gnss", "/odom", "/base_link", 100);
 
 //    distortion_adjust_ptr_ = std::make_shared<DistortionAdjust>();
 }
@@ -34,19 +35,15 @@ bool DataPretreatFlow::Run() {
   if (!InitCalibration())
     return false;
 
-//    if (!InitGNSS())
-//        return false;
+  if (!InitGNSS())
+    return false;
 
   while (HasData()) {
     if (!ValidData())
       continue;
 
-//    TransformData();
+//    TransformDatas();
 
-    if (!lidar_to_base_ptr_->LookupData(lidar_to_base_)) {
-      return false;
-    }
-//    current_cloud_data_.TransformCoordinate(lidar_to_base_);
     PublishData();
   }
 
@@ -56,29 +53,23 @@ bool DataPretreatFlow::Run() {
 bool DataPretreatFlow::ReadData() {
   cloud_sub_ptr_->ParseData(cloud_data_buff_);
 
-//    static std::deque<IMUData> unsynced_imu_;
-//    static std::deque<VelocityData> unsynced_velocity_;
-//    static std::deque<GNSSData> unsynced_gnss_;
+  static std::deque<GNSSData> unsynced_gnss_;
+  static std::deque<JointData> unsynced_joint_;
 
-//    imu_sub_ptr_->ParseData(unsynced_imu_);
-//    velocity_sub_ptr_->ParseData(unsynced_velocity_);
-//    gnss_sub_ptr_->ParseData(unsynced_gnss_);
+  gnss_sub_ptr_->ParseData(gnss_data_buff_);
+  joint_sub_ptr_->ParseData(unsynced_joint_);
 
   if (cloud_data_buff_.size() == 0)
     return false;
 
   double cloud_time = cloud_data_buff_.front().time;
-//    bool valid_imu = IMUData::SyncData(unsynced_imu_, imu_data_buff_, cloud_time);
-//    bool valid_velocity = VelocityData::SyncData(unsynced_velocity_, velocity_data_buff_, cloud_time);
-//    bool valid_gnss = GNSSData::SyncData(unsynced_gnss_, gnss_data_buff_, cloud_time);
+  bool valid_joint = JointData::SyncData(unsynced_joint_, joint_data_buff_, cloud_time);
+  bool valid_gnss = GNSSData::SyncData(unsynced_gnss_, gnss_data_buff_, cloud_time);
 
-  static bool sensor_inited = false;
-  if (!sensor_inited) {
-//        if (!valid_imu || !valid_velocity || !valid_gnss) {
-//            cloud_data_buff_.pop_front();
-//            return false;
-//        }
-    sensor_inited = true;
+  if (!valid_joint) {
+    cloud_data_buff_.pop_front();
+    ROS_ERROR("data unstable");
+    return false;
   }
 
   return true;
@@ -87,20 +78,16 @@ bool DataPretreatFlow::ReadData() {
 bool DataPretreatFlow::InitCalibration() {
   static bool calibration_received = false;
   if (!calibration_received) {
-//        if (lidar_to_imu_ptr_->LookupData(lidar_to_imu_)) {
-//            calibration_received = true;
-//        }
     if (lidar_to_cabin_ptr_->LookupData(lidar_to_cabin_)) {
       calibration_received = true;
     }
   }
-
   return calibration_received;
 }
 
 bool DataPretreatFlow::InitGNSS() {
   static bool gnss_inited = false;
-  if (!gnss_inited) {
+  if (!gnss_inited && !gnss_data_buff_.empty()) {
     GNSSData gnss_data = gnss_data_buff_.front();
     gnss_data.InitOriginPosition();
     gnss_inited = true;
@@ -112,39 +99,36 @@ bool DataPretreatFlow::InitGNSS() {
 bool DataPretreatFlow::HasData() {
   if (cloud_data_buff_.size() == 0)
     return false;
-//    if (imu_data_buff_.size() == 0)
-//        return false;
-//    if (velocity_data_buff_.size() == 0)
-//        return false;
-//    if (gnss_data_buff_.size() == 0)
-//        return false;
+
+  if (joint_data_buff_.size() == 0)
+    return false;
+
+  if (gnss_data_buff_.size() == 0)
+    return false;
 
   return true;
 }
 
 bool DataPretreatFlow::ValidData() {
   current_cloud_data_ = cloud_data_buff_.front();
-//    current_imu_data_ = imu_data_buff_.front();
-//    current_velocity_data_ = velocity_data_buff_.front();
-//    current_gnss_data_ = gnss_data_buff_.front();
+  current_gnss_data_ = gnss_data_buff_.front();
+  current_joint_data_ = joint_data_buff_.front();
 //
-//    double diff_imu_time = current_cloud_data_.time - current_imu_data_.time;
-//    double diff_velocity_time = current_cloud_data_.time - current_velocity_data_.time;
 //    double diff_gnss_time = current_cloud_data_.time - current_gnss_data_.time;
+  double diff_joint_time = current_cloud_data_.time - current_joint_data_.time;
 //    if (diff_imu_time < -0.05 || diff_velocity_time < -0.05 || diff_gnss_time < -0.05) {
 //        cloud_data_buff_.pop_front();
 //        return false;
 //    }
-//
-//    if (diff_imu_time > 0.05) {
-//        imu_data_buff_.pop_front();
-//        return false;
-//    }
-//
-//    if (diff_velocity_time > 0.05) {
-//        velocity_data_buff_.pop_front();
-//        return false;
-//    }
+  if (diff_joint_time < -0.05) {
+    cloud_data_buff_.pop_front();
+    return false;
+  }
+
+  if (diff_joint_time > 0.05) {
+    joint_data_buff_.pop_front();
+    return false;
+  }
 //
 //    if (diff_gnss_time > 0.05) {
 //        gnss_data_buff_.pop_front();
@@ -152,34 +136,36 @@ bool DataPretreatFlow::ValidData() {
 //    }
 //
   cloud_data_buff_.pop_front();
-//    imu_data_buff_.pop_front();
-//    velocity_data_buff_.pop_front();
-//    gnss_data_buff_.pop_front();
+  joint_data_buff_.pop_front();
+//  gnss_data_buff_.pop_front();
+  gnss_data_buff_.clear();
 
   return true;
 }
 
-bool DataPretreatFlow::TransformData() {
+bool DataPretreatFlow::TransformDatas() {
   gnss_pose_ = Eigen::Matrix4f::Identity();
 
   current_gnss_data_.UpdateXYZ();
   gnss_pose_(0, 3) = current_gnss_data_.local_E;
   gnss_pose_(1, 3) = current_gnss_data_.local_N;
   gnss_pose_(2, 3) = current_gnss_data_.local_U;
-  gnss_pose_.block<3, 3>(0, 0) = current_imu_data_.GetOrientationMatrix();
-  gnss_pose_ *= lidar_to_imu_;
 
-  current_velocity_data_.TransformCoordinate(lidar_to_imu_);
-  distortion_adjust_ptr_->SetMotionInfo(0.1, current_velocity_data_);
-  distortion_adjust_ptr_->AdjustCloud(current_cloud_data_.cloud_ptr, current_cloud_data_.cloud_ptr);
-
+  gnss_pose_.block<3, 3>(0, 0) = current_gnss_data_.GetRotationMatrix();
+//  gnss_pose_ *= lidar_to_imu_;
   return true;
 }
 
 bool DataPretreatFlow::PublishData() {
+
   cloud_pub_ptr_->Publish(current_cloud_data_.cloud_ptr, current_cloud_data_.time);
-  joint_pub_ptr_->Publish(lidar_to_base_);
-//    gnss_pub_ptr_->Publish(gnss_pose_, current_gnss_data_.time);
+
+  lidar_to_base_ = Eigen::Matrix4f::Identity();
+  lidar_to_base_ = current_joint_data_.GetTranslationMatrix() * lidar_to_cabin_;
+  lidar_to_base_(2, 3) = 3.0538;
+  joint_pub_ptr_->Publish(lidar_to_base_, current_joint_data_.time);
+
+//  gnss_pub_ptr_->Publish(gnss_pose_);
 
   return true;
 }
